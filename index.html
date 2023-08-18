@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebGL</title>
+    <style>
+      body {
+        padding: 0px;
+        margin: 0px;
+        background-color: #f6f6f6;
+        font-family: "微软雅黑";
+        /* font-weight: lighter; */
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="webgl" style="background-color: rgba(0, 0, 0, 1)"></canvas>
+    <script src="./js/three-camv3m4.min.js"></script>
+    <script id="vertexShader" type="x-shader/x-vertex">
+      // 顶点着色器
+      // 定义属性（attribute）
+      attribute vec4 position; //vec4类型的position   vec4表示一个具有四个分量（x，y，z，w）的向量
+      attribute float scale; //float类型的scale   float表示一个标量值
+
+      // 定义全局变量   mat4类型的矩阵   用于进行顶点的模型视图变换和投影变换
+      uniform mat4 modelViewMatrix;//模型视图矩阵
+      uniform mat4 projectionMatrix;//投影矩阵
+
+      void main() {
+        // 顶点在模型视图空间中的位置
+        vec4 mvPosition = modelViewMatrix * position;
+
+        // 计算顶点的大小（`gl_PointSize`）：这个计算公式使用了顶点的深度（z轴）坐标来决定顶点的大小。较远的顶点会变得更小，而较近的顶点会变得更大。
+        gl_PointSize = scale*1.0 * ( 200.0 / - mvPosition.z );
+
+        // 顶点在裁剪空间中的坐标
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-fragment">
+      // 片元着色器
+        void main() {
+          // 判断当前片元与屏幕中心点（0.5, 0.5）的距离是否大于0.49。如果距离大于0.49，就执行 discard 语句，该语句告诉图形处理器丢弃当前片元，不进行渲染。
+          if ( length( gl_PointCoord - vec2( 0.5, 0.5 ) ) > 0.49 ) discard;
+
+          // 如果距离小于等于0.49，代码会继续执行下一行，设置 gl_FragColor 的值为 (0.0, 1.0, 1.0, 1.0)，即设置当前片元的颜色为青色。
+          gl_FragColor = vec4(0.0,1.0,1.0,1.0);
+      }
+    </script>
+    <script>
+      var canvas = document.getElementById("webgl");
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      var gl = canvas.getContext("webgl");
+
+      var vertexShaderSource =
+        document.getElementById("vertexShader").innerText;
+
+      var fragShaderSource =
+        document.getElementById("fragmentShader").innerText;
+
+      // 初始化着色器
+      var program = initShader(gl, vertexShaderSource, fragShaderSource);
+
+      // 存储 顶点的位置position 和 缩放因子scale
+      var aposLocation = gl.getAttribLocation(program, "position");
+      var scale = gl.getAttribLocation(program, "scale");
+
+      // 存储 模型视图矩阵modelViewMatrix 和 投影矩阵projectionMatrix
+      var modelViewMatrixLoc = gl.getUniformLocation(
+        program,
+        "modelViewMatrix"
+      );
+      var projectionMatrixLoc = gl.getUniformLocation(
+        program,
+        "projectionMatrix"
+      );
+
+      var SEPARATION = 100, // 粒子之间的间距
+        AMOUNTX = 50, // 在x轴上的粒子数量
+        AMOUNTY = 50; // 在y轴上的粒子数量
+      var numParticles = AMOUNTX * AMOUNTY;
+
+      // Float32Array 一个固定长度，用来存储浮点类型数据的数组
+      // 存储粒子的位置信息（x, y, z坐标）
+      var positions = new Float32Array(numParticles * 3);
+
+      // 存储粒子的缩放比例
+      var scales = new Float32Array(numParticles);
+
+      var i = 0,
+        j = 0;
+
+      // 外层循环控制x轴的粒子 内层循环控制y轴的粒子
+      for (var ix = 0; ix < AMOUNTX; ix++) {
+        for (var iy = 0; iy < AMOUNTY; iy++) {
+          //
+          positions[i] = ix * SEPARATION - (AMOUNTX * SEPARATION) / 2; // x坐标 通过乘以SEPARATION，并减去整个粒子系统在x轴上的总宽度的一半，来计算每个粒子的x位置
+          positions[i + 1] = 0; // y坐标 = 0 所有粒子都在相同的高度上
+          positions[i + 2] = iy * SEPARATION - (AMOUNTY * SEPARATION) / 2; // z坐标 通过乘以SEPARATION，并减去整个粒子系统在z轴上的总高度的一半，来计算每个粒子的z位置
+          scales[j] = 1; // 当前粒子的缩放比例为1
+          i += 3;
+          j++;
+        }
+      }
+
+      // 创建一个新的缓冲区对象 colorBuffer
+      var colorBuffer = gl.createBuffer();
+
+      // 将缓冲区对象绑定到 ARRAY_BUFFER 目标上
+      gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+
+      // 将包含顶点属性的 Buffer 数据 scales 填充到缓冲区中，内容被写入缓冲区，但不被读取
+      gl.bufferData(gl.ARRAY_BUFFER, scales, gl.STATIC_DRAW);
+
+      // 告诉 WebGL 如何解释缓冲区中的数据
+      // scale 属性的大小为 1，数据类型为 gl.FLOAT，不需要归一化，偏移量为 0
+      gl.vertexAttribPointer(scale, 1, gl.FLOAT, false, 0, 0);
+
+      // 启用 scale 属性的顶点缓冲区对象
+      gl.enableVertexAttribArray(scale);
+
+      var buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.vertexAttribPointer(aposLocation, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(aposLocation);
+
+      // 启用深度测试 确保绘制的图形按照正确的深度顺序进行渲染，避免后面的图形覆盖前面的图形
+      gl.enable(gl.DEPTH_TEST);
+
+      // 设置相机视角的宽高比
+      var width = window.innerWidth; // 获取浏览器窗口的宽度
+      var height = window.innerHeight; // 获取浏览器窗口的高度
+
+      // 创建一个透视相机对象
+      var camera = new THREE.PerspectiveCamera(60, width / height, 1, 10000); // 相机的视角角度为60度，宽高比为width / height，近裁剪面距离为1，远裁剪面距离为10000
+
+      // 相机的位置为(200, 300, 200)
+      camera.position.set(200, 300, 200);
+
+      camera.position.set(944, 206, -262);
+
+      // 相机的观察点设置为(0, 0, 0) 相机朝向场景原点
+      camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+      // 如果相机的一些属性发生了变化，需要执行 updateProjectionMatrix() 方法更新相机的投影矩阵 投影矩阵是用于将三维物体投影到相机视锥体上的矩阵
+      camera.updateProjectionMatrix();
+
+      // 更新相机的世界矩阵
+      camera.updateMatrixWorld(true);
+
+      var width = window.innerWidth;
+      var height = window.innerHeight;
+      var mat4 = new THREE.Matrix4();
+
+      // 将 camera.projectionMatrix 的值复制给 mat4
+      mat4.copy(camera.projectionMatrix); // projectionMatrix 是一个用于定义相机的投影矩阵的属性
+
+      // 将矩阵数据传递给WebGL的着色器程序
+      var mxArr = new Float32Array(mat4.elements);
+
+      // 将 projectionMatrixLoc 作为着色器程序中的一个 uniform 变量，并将矩阵数据传递给它
+      gl.uniformMatrix4fv(projectionMatrixLoc, false, mxArr); // projectionMatrixLoc 是一个指向投影矩阵的 uniform 变量的引用
+
+      var mat4y = new THREE.Matrix4();
+
+      mat4y.copy(camera.matrixWorldInverse); // matrixWorldInverse 是相机的世界矩阵的逆矩阵
+
+      console.log(camera.matrixWorldInverse);
+      var myArr = new Float32Array(mat4y.elements);
+
+      gl.uniformMatrix4fv(modelViewMatrixLoc, false, myArr);
+
+      var count = 0;
+      // 存储鼠标的当前位置 检测鼠标的移动或进行一些与鼠标相关的计算
+      var mouseX = 0,
+        mouseY = 0;
+
+      // 将鼠标位置转换为相对于窗口中心的坐标
+      var windowHalfX = window.innerWidth / 2;
+      var windowHalfY = window.innerHeight / 2;
+
+      function draw() {
+        // 鼠标的X坐标与当前相机位置的差值乘以0.01，并将结果添加到当前相机位置的X坐标上，使相机的位置平滑地跟随鼠标的移动
+        camera.position.x += (mouseX - camera.position.x) * 0.01;
+
+        // 更新相机的世界矩阵
+        camera.updateMatrixWorld(true); // 相机的世界矩阵用于将3D场景中的对象转换到相机坐标系下
+        mat4y.copy(camera.matrixWorldInverse); // 将相机的视图矩阵传递给WebGL着色器
+
+        var myArr = new Float32Array(mat4y.elements);
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, myArr);
+
+        var i = 0,
+          j = 0;
+
+        for (var ix = 0; ix < AMOUNTX; ix++) {
+          for (var iy = 0; iy < AMOUNTY; iy++) {
+            // 设置 positions 数组中的值，该数组存储每个物体的位置
+            positions[i + 1] =
+              Math.sin((ix + count) * 0.3) * 50 +
+              Math.sin((iy + count) * 0.5) * 50;
+
+            // 存储每个物体的缩放比例
+            scales[j] =
+              (Math.sin((ix + count) * 0.3) + 1.3) * 8 +
+              (Math.sin((iy + count) * 0.5) + 1.3) * 8;
+            i += 3;
+            j++;
+          }
+        }
+
+        // 控制动画的进程
+        count += 0.1;
+
+        // 绑定颜色和位置缓冲 缓冲对象是一种存储大量数据的机制
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+
+        // 将颜色和位置数据传输到缓冲对象中
+        gl.bufferData(gl.ARRAY_BUFFER, scales, gl.STATIC_DRAW); // STATIC_DRAW: 这些数据在使用时不会被修改
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        // 请求浏览器执行下一帧动画 循环，以便持续不断地更新和绘制画面
+        requestAnimationFrame(draw);
+
+        // 绘制点  POINTS: 每个顶点都应该被渲染为一个点  0: 顶点数组的起始索引 2500: 顶点的数量
+        gl.drawArrays(gl.POINTS, 0, 2500);
+      }
+      draw();
+
+      // 初始化着色器程序
+      function initShader(gl, vertexShaderSource, fragmentShaderSource) {
+        // 创建顶点着色器和片元着色器 用于处理图形的不同阶段
+        var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+
+        // 传递给函数 initShader 的 vertexShaderSource 和 fragmentShaderSource 参数分配给对应的顶点着色器和片元着色器
+        gl.shaderSource(vertexShader, vertexShaderSource);
+        gl.shaderSource(fragmentShader, fragmentShaderSource);
+
+        // 编译顶点着色器和片元着色器
+        gl.compileShader(vertexShader);
+        gl.compileShader(fragmentShader);
+
+        // 创建一个着色器程序对象 着色器程序是顶点着色器和片元着色器的集合。
+        var program = gl.createProgram();
+
+        // 将顶点着色器和片元着色器对象绑定到着色器程序
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+
+        // 将顶点着色器和片元着色器链接到着色器程序
+        gl.linkProgram(program);
+
+        // 使用着色器程序
+        gl.useProgram(program);
+
+        return program;
+      }
+
+      // 注册事件监听器
+      document.addEventListener("mousemove", onDocumentMouseMove, false); // 鼠标移动时触发
+      document.addEventListener("touchstart", onDocumentTouchStart, false); // 触摸屏幕时触发
+      document.addEventListener("touchmove", onDocumentTouchMove, false); // 触摸屏幕并移动手指时触发
+
+      // event 是一个包含鼠标事件信息的对象
+      function onDocumentMouseMove(event) {
+        // 鼠标相对于窗口中心的偏移量 = 鼠标在页面上的坐标 - 窗口宽度和高度的一半
+        // 将鼠标的坐标值与窗口中心的坐标进行比较，以便使鼠标的移动范围在窗口中心为原点的坐标系内
+        mouseX = event.clientX - windowHalfX;
+        mouseY = event.clientY - windowHalfY;
+      }
+
+      // event参数来获取触摸事件的信息
+      function onDocumentTouchStart(event) {
+        // 当前触摸事件中的触摸点数量
+        if (event.touches.length === 1) {
+          // 阻止默认的滑动行为，防止网页内容随手指的滑动而滚动
+          event.preventDefault();
+
+          // 鼠标在页面中的X和Y坐标位置的变量
+          mouseX = event.touches[0].pageX - windowHalfX;
+          mouseY = event.touches[0].pageY - windowHalfY;
+        }
+      }
+
+      function onDocumentTouchMove(event) {
+        // 是否只有一个触摸点（只有一个手指在屏幕上滑动）
+        if (event.touches.length === 1) {
+          event.preventDefault();
+
+          mouseX = event.touches[0].pageX - windowHalfX;
+          mouseY = event.touches[0].pageY - windowHalfY;
+        }
+      }
+
+      var width = window.innerWidth;
+      var height = window.innerHeight;
+
+      var mid = width / 2 - 160 / 2; //中间位置
+      // 两侧分别平移150
+
+      // 监听窗口大小的变化
+      window.onresize = function () {
+        // 画布的宽度和高度 = 窗口的宽度和高度
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // 设置WebGL视口的大小和位置
+        gl.viewport(0, 0, window.innerWidth, window.innerHeight);
+
+        // 更新相机的宽高比，使其与窗口的宽高比一致
+        // .aspect属性受到canvas画布宽高度影响，当canvas画布尺寸发生变化的时候，需要更新透视投影相机PerspectiveCamera的.aspect属性。
+        camera.aspect = window.innerWidth / window.innerHeight; 
+
+        // 更新相机的投影矩阵
+        camera.updateProjectionMatrix();
+
+        mat4.copy(camera.projectionMatrix);
+
+        // 将相机的投影矩阵复制到一个新的数组 mxArr 中
+        var mxArr = new Float32Array(mat4.elements);
+
+        // 将该数组传递给着色器程序中的投影矩阵变量
+        gl.uniformMatrix4fv(projectionMatrixLoc, false, mxArr);
+
+        // 重新获取窗口的宽度和高度，并计算出新的中间位置的x坐标
+        var width = window.innerWidth;
+        var height = window.innerHeight;
+
+        var mid = width / 2 - 160 / 2; //中间位置
+        // 两侧分别平移150
+
+        // 将画布的样式的宽度和高度设置为窗口的宽度和高度，以确保画布的大小与窗口一致
+        canvas.style.width = window.innerWidth + "px";
+        canvas.style.height = window.innerHeight + "px";
+      };
+    </script>
+  </body>
+</html>
